@@ -1,3 +1,13 @@
-pyrogram
-telethon
-tgcrypto
+convopyro~=0.5
+
+kurigram>=2.2.9
+
+meval==2.5
+
+pymongo<=4.14.1
+
+python-dotenv>=1.1.1
+
+telethon>=1.40.0
+
+pytgcrypto>=1.2.11
