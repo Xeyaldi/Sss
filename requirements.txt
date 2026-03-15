@@ -11,3 +11,8 @@ python-dotenv>=1.1.1
 telethon>=1.40.0
 
 pytgcrypto>=1.2.11
+telethon
+heroku3
+motor
+dnspython
+requests
