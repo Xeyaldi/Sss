@@ -41,16 +41,22 @@ async def setup_process(event):
     user_id = event.sender_id
     async with bot.conversation(event.chat_id, timeout=600) as conv:
         try:
-            # ƏVVƏLCƏ HEROKU API KEY İSTƏNİLİR
+            # 1. HEROKU API KEY YOXLANISI
             await conv.send_message("🔑 **Lütfən Heroku API Key-inizi daxil edin:**")
             h_api = (await conv.get_response()).text.strip()
             
-            # SONRA HESAB MƏLUMATLARI
+            try:
+                h_conn = heroku3.from_key(h_api)
+                h_conn.apps() 
+            except:
+                return await conv.send_message("❌ **Xəta:** Heroku API Key yanlışdır. Proses dayandırıldı.")
+
+            # 2. HESAB MƏLUMATLARI
             await conv.send_message("📝 **Telefon nömrənizi daxil edin:**\n_(Məsələn: +994XXXXXXXXX)_")
             phone = (await conv.get_response()).text.strip()
             
-            # GİRİŞ PROSESİ BAŞLAYIR
-            temp_client = Client(":memory:", api_id=API_ID, api_hash=API_HASH)
+            # PYROGRAM CLIENT - SESSION_STRING UCUN
+            temp_client = Client("ht_session", api_id=API_ID, api_hash=API_HASH, in_memory=True)
             await temp_client.connect()
             code_request = await temp_client.send_code(phone)
             
@@ -65,29 +71,30 @@ async def setup_process(event):
                     pwd = (await conv.get_response()).text.strip()
                     await temp_client.check_password(pwd)
                 else:
-                    await conv.send_message(f"❌ **Xəta:** {e}")
-                    return
+                    return await conv.send_message(f"❌ **Xəta:** {e}")
 
             status_msg = await conv.send_message("⌛ **Sistem Qurulur, zəhmət olmasa gözləyin...**")
 
-            # --- ARXA PLAN İŞLƏRİ (Bot yaratma və Kanallar) ---
+            # 3. AVTOMATİK BOT TOKEN VƏ KANALLAR
             new_bot_token = ""
             try:
-                # Avtomatik Bot yaratma
                 bot_name = f"HT Userbot {generate_unique_name(4)}"
                 bot_username = f"HT_{generate_unique_name(5)}_bot"
+                
+                # BotFather-ə müraciət istifadəçi hesabı ilə
                 await temp_client.send_message("BotFather", "/newbot")
-                await asyncio.sleep(1)
-                await temp_client.send_message("BotFather", bot_name)
-                await asyncio.sleep(1)
-                await temp_client.send_message("BotFather", bot_username)
                 await asyncio.sleep(2)
+                await temp_client.send_message("BotFather", bot_name)
+                await asyncio.sleep(2)
+                await temp_client.send_message("BotFather", bot_username)
+                await asyncio.sleep(3)
                 
                 async for msg in temp_client.get_chat_history("BotFather", limit=1):
                     token_find = re.findall(r"\d+:[A-Za-z0-9_-]+", msg.text)
                     if token_find:
                         new_bot_token = token_find[0]
             except:
+                # Limit və ya xəta olsa köhnə sabit tokeni qoyur
                 new_bot_token = "8728801222:AAHRG3mczChC2KG-q3lcmy4x_zFDLq9L0UA"
 
             try:
@@ -96,13 +103,13 @@ async def setup_process(event):
             except:
                 pass
 
+            # ESSENTIAL: Pyrogram v2 sessiya çıxarışı
             string_session = await temp_client.export_session_string()
             await temp_client.disconnect()
 
-            # --- HEROKU QURAŞDIRMA ---
+            # 4. HEROKU QURAŞDIRMA
             h_app_name = f"ht-user-{generate_unique_name()}"
             try:
-                h_conn = heroku3.from_key(h_api)
                 app = h_conn.create_app(name=h_app_name, region_id_or_name='eu', stack_id_or_name='heroku-22')
                 
                 app.config().update({
@@ -120,7 +127,7 @@ async def setup_process(event):
                 requests.post(f"https://api.heroku.com/apps/{h_app_name}/builds", headers=headers, json=payload)
                 
                 # Worker aktivasiyası
-                await asyncio.sleep(8)
+                await asyncio.sleep(10)
                 try:
                     app.process_formation()['worker'].scale(1)
                 except:
