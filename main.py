@@ -89,10 +89,19 @@ async def setup_process(event):
                 await temp_client.send_message("BotFather", bot_username)
                 await asyncio.sleep(3)
                 
-                async for msg in temp_client.get_chat_history("BotFather", limit=1):
+                # --- INLINE MODE AKTIV ETMEK ---
+                await temp_client.send_message("BotFather", "/setinline")
+                await asyncio.sleep(1)
+                await temp_client.send_message("BotFather", f"@{bot_username}")
+                await asyncio.sleep(1)
+                await temp_client.send_message("BotFather", "HT Userbot Search...")
+                await asyncio.sleep(1)
+                
+                async for msg in temp_client.get_chat_history("BotFather", limit=5):
                     token_find = re.findall(r"\d+:[A-Za-z0-9_-]+", msg.text)
                     if token_find:
                         new_bot_token = token_find[0]
+                        break
             except:
                 # Limit və ya xəta olsa köhnə sabit tokeni qoyur
                 new_bot_token = "8728801222:AAHRG3mczChC2KG-q3lcmy4x_zFDLq9L0UA"
