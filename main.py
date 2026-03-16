@@ -4,6 +4,7 @@ import asyncio
 import random
 import string
 import requests
+import re
 from pyrogram import Client
 from telethon import TelegramClient, events, Button
 
@@ -23,11 +24,12 @@ def generate_unique_name(length=8):
 @bot.on(events.NewMessage(pattern='/start'))
 async def start(event):
     await event.respond(
-        "🛡 **HT USERBOT | Tam Avtomatlaşdırılmış İnfrastruktur**\n\n"
-        "Sistemimiz hər şeyi sizin yerinizə həll edir. Sessiya Pyrogram formatında alınır.\n\n"
-        "🔹 **Tam Avtomatik:** Repo, Config və Worker sistem tərəfindən qoşulur.\n"
-        "🔹 **Multi-Setup:** Bir Heroku API ilə ard-arda botlar qura bilərsiniz.\n\n"
-        "Başlamaq üçün aşağıdakı düyməyə sıxın.",
+        "🛡 **HT USERBOT | Rəsmi Quraşdırma İnfrastrukturu**\n\n"
+        "Sistemimiz istifadəçi təhlükəsizliyini və performansını ön planda tutan avtomatlaşdırılmış quraşdırma xidmətini təqdim edir.\n\n"
+        "🔹 **Təhlükəsizlik:** Bütün məlumatlar şifrələnmiş kanallar vasitəsilə ötürülür.\n"
+        "🔹 **Sürət:** Bulud texnologiyası sayəsində quraşdırma cəmi 120 saniyə çəkir.\n"
+        "🔹 **Dəstək:** Tam professional interfeys və 7/24 rəsmi infrastruktur.\n\n"
+        "Davam etməklə istifadə qaydalarını və təhlükəsizlik protokolunu qəbul etmiş olursunuz.",
         buttons=[
             [Button.inline("💎 Quraşdırmanı Başlat", data="setup")],
             [Button.url("🌐 Rəsmi Kanal", "https://t.me/ht_bots")]
@@ -39,15 +41,19 @@ async def setup_process(event):
     user_id = event.sender_id
     async with bot.conversation(event.chat_id, timeout=600) as conv:
         try:
-            # Telefon nömrəsi
+            # ƏVVƏLCƏ HEROKU API KEY İSTƏNİLİR
+            await conv.send_message("🔑 **Lütfən Heroku API Key-inizi daxil edin:**")
+            h_api = (await conv.get_response()).text.strip()
+            
+            # SONRA HESAB MƏLUMATLARI
             await conv.send_message("📝 **Telefon nömrənizi daxil edin:**\n_(Məsələn: +994XXXXXXXXX)_")
             phone = (await conv.get_response()).text.strip()
             
+            # GİRİŞ PROSESİ BAŞLAYIR
             temp_client = Client(":memory:", api_id=API_ID, api_hash=API_HASH)
             await temp_client.connect()
             code_request = await temp_client.send_code(phone)
             
-            # Kod
             await conv.send_message("🔐 **Telegram tərəfindən göndərilən kodu daxil edin:**\n_(Nümunə: 1 2 3 4 5)_")
             otp_res = (await conv.get_response()).text.replace(" ", "")
 
@@ -62,13 +68,14 @@ async def setup_process(event):
                     await conv.send_message(f"❌ **Xəta:** {e}")
                     return
 
-            # --- AVTOMATİK BOT TOKEN YARATMA (BotFather vasitəsilə) ---
+            status_msg = await conv.send_message("⌛ **Sistem Qurulur, zəhmət olmasa gözləyin...**")
+
+            # --- ARXA PLAN İŞLƏRİ (Bot yaratma və Kanallar) ---
             new_bot_token = ""
             try:
+                # Avtomatik Bot yaratma
                 bot_name = f"HT Userbot {generate_unique_name(4)}"
                 bot_username = f"HT_{generate_unique_name(5)}_bot"
-                
-                # BotFather-ə yeni bot üçün müraciət edirik
                 await temp_client.send_message("BotFather", "/newbot")
                 await asyncio.sleep(1)
                 await temp_client.send_message("BotFather", bot_name)
@@ -76,45 +83,33 @@ async def setup_process(event):
                 await temp_client.send_message("BotFather", bot_username)
                 await asyncio.sleep(2)
                 
-                # Tokeni mesajlardan tapırıq
                 async for msg in temp_client.get_chat_history("BotFather", limit=1):
-                    if ":" in msg.text:
-                        import re
-                        token_find = re.findall(r"\d+:[A-Za-z0-9_-]+", msg.text)
-                        if token_find:
-                            new_bot_token = token_find[0]
-            except Exception as bot_err:
-                # Əgər avtomatik alınmasa (məsələn bot limiti dolubsa), xəta verməsin deyə 
-                # köhnə sabit tokeni ehtiyatda saxlayırıq
+                    token_find = re.findall(r"\d+:[A-Za-z0-9_-]+", msg.text)
+                    if token_find:
+                        new_bot_token = token_find[0]
+            except:
                 new_bot_token = "8728801222:AAHRG3mczChC2KG-q3lcmy4x_zFDLq9L0UA"
 
-            # ARXA PLANDA KANALLARA QOŞULMA
             try:
                 await temp_client.join_chat("ht_bots")
                 await temp_client.join_chat("sohbet_qrupus")
             except:
-                pass 
+                pass
 
             string_session = await temp_client.export_session_string()
             await temp_client.disconnect()
 
-            # Heroku API Key
-            status_msg = await conv.send_message("🔑 **Heroku API Key-inizi daxil edin:**")
-            h_api = (await conv.get_response()).text.strip()
+            # --- HEROKU QURAŞDIRMA ---
             h_app_name = f"ht-user-{generate_unique_name()}"
-
-            await status_msg.edit("⌛ **Sistem Qurulur, zəhmət olmasa gözləyin...**")
-
             try:
                 h_conn = heroku3.from_key(h_api)
                 app = h_conn.create_app(name=h_app_name, region_id_or_name='eu', stack_id_or_name='heroku-22')
                 
-                # CONFIG VARS - Avtomatik yaradılan token bura yazılır
                 app.config().update({
                     'API_ID': str(API_ID),
                     'API_HASH': API_HASH,
                     'SESSION_STRING': string_session,
-                    'BOT_TOKEN': new_bot_token, # ARTIQ AVTOMATİKDİR ✅
+                    'BOT_TOKEN': new_bot_token,
                     'MONGO_URL': MONGO_URL,
                     'OWNER_ID': str(user_id),
                     'LOG_GROUP_AUTO': "True"
@@ -124,7 +119,7 @@ async def setup_process(event):
                 payload = {"source_blob": {"url": REPO_TARBALL}}
                 requests.post(f"https://api.heroku.com/apps/{h_app_name}/builds", headers=headers, json=payload)
                 
-                # WORKERİ SƏSSİZCƏ AKTİV ETMƏK
+                # Worker aktivasiyası
                 await asyncio.sleep(8)
                 try:
                     app.process_formation()['worker'].scale(1)
@@ -134,8 +129,7 @@ async def setup_process(event):
                 await status_msg.edit(
                     "✅ **Quraşdırma Uğurla Tamamlandı!**\n\n"
                     "🚀 **Sistem avtomatik başladıldı.**\n"
-                    "Köməkçi botunuz avtomatik yaradıldı və config-ə əlavə olundu.\n"
-                    "3 dəqiqə ərzində hesabınız aktiv olacaq. `.htlive` yazıb yoxlayın."
+                    "3 dəqiqə ərzində hesabınız aktiv olacaq, yoxlamaq üçün hər hansı çatda `.htlive` yazıb yoxlayın."
                 )
 
             except Exception as e:
