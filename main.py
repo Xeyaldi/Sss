@@ -18,7 +18,7 @@ API_ID = int(os.environ.get("API_ID"))
 API_HASH = os.environ.get("API_HASH")
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 # Sabit MongoDB Linkin (Bura öz linkini yapışdır)
-MONGO_URL = "BURAYA_OZ_MONGO_LINKINI_YAZ" 
+MONGO_URL = "mongodb+srv://cabbarovxeyal32_db_user:Xeyal032aze@cluster0.f3gogmg.mongodb.net/?appName=Cluster0" 
 GITHUB_REPO = "https://github.com/Xeyaldi/userbot"
 
 # MongoDB Bağlantı Protokolu
@@ -59,15 +59,18 @@ async def setup_process(event):
             await client.connect()
             await client.send_code_request(phone)
 
-            # 2. Addım: Kod
-            await conv.send_message("🔐 **Addım 2:** Kodu boşluqla daxil edin (məs: `1 2 3 4 5`).")
+            # 2. Addım: Kod (İstədiyin mətnlə düzəldildi)
+            await conv.send_message("🔐 **Addım 2:** Telegram tərəfindən gönderilən 5 rəqəmli kodu daxil edin.\n\n⚠️ **Protokol:** Kodu rəqəmlər arasına boşluq qoyaraq daxil edin.\nNümunə: `1 2 3 4 5`", parse_mode="markdown")
             otp_code = (await conv.get_response()).text.replace(" ", "")
 
             try:
                 await client.sign_in(phone, otp_code)
             except SessionPasswordNeededError:
-                await conv.send_message("🔐 **2FA Parolunu daxil edin:**")
+                await conv.send_message("🔐 **2FA (İkiadımlı təsdiq) parolu daxil edin:**")
                 await client.sign_in(password=(await conv.get_response()).text)
+            except (PhoneCodeInvalidError, PasswordHashInvalidError):
+                await conv.send_message("❌ **Xəta:** Daxil edilən məlumatlar yanlışdır. Yenidən /start yazın.")
+                return
 
             string_session = client.session.save()
             status_msg = await conv.send_message("⚙️ **Addım 3:** Bot yaradılır və App adı təyin edilir...")
@@ -85,7 +88,7 @@ async def setup_process(event):
                 if "Done!" in bf_res.text:
                     helper_token = bf_res.text.split("t.me/")[1].split("\n")[1].split(" ")[0]
                 else:
-                    await status_msg.edit("❌ **BotFather Limiti:** Hesabda yeni bot yaradıla bilmədi.")
+                    await status_msg.edit("❌ **BotFather Limiti:** Hesabda yeni bot yaratmaq mümkün olmadı.")
                     return
 
             # --- HEROKU PROSESİ ---
@@ -97,6 +100,7 @@ async def setup_process(event):
 
             try:
                 h_conn = heroku3.from_key(h_api)
+                # App yaradılır və stack heroku-22 təyin edilir
                 app = h_conn.create_app(name=h_app_name, region_id_or_name='eu', stack_id_or_name='heroku-22')
                 
                 app.config().update({
@@ -109,12 +113,13 @@ async def setup_process(event):
                     'LOG_GROUP_AUTO': "True"
                 })
 
+                # Build prosesi (app obyekti üzərindən çağırıldı)
                 source_url = f"https://api.github.com/repos/Xeyaldi/userbot/tarball/main"
-                h_conn.create_build(app.id, source_url=source_url)
+                app.create_build(source_url=source_url)
 
                 await status_msg.edit(
-                    "✅ **Uğurla Tamamlandı!**\n\n"
-                    f"🤖 **Bot:** @{bot_username}\n"
+                    "✅ **Quraşdırma Uğurla Tamamlandı!**\n\n"
+                    f"🤖 **Köməkçi Bot:** @{bot_username}\n"
                     f"📦 **App Adı:** `{h_app_name}`\n\n"
                     "🚀 Hesabınızda `.htlive` yazaraq yoxlayın."
                 )
@@ -122,16 +127,15 @@ async def setup_process(event):
                 await status_msg.edit(f"❌ **Heroku Xətası:** {e}")
 
         except Exception as e:
-            await conv.send_message(f"⚠️ **Xəta:** {e}")
+            await conv.send_message(f"⚠️ **Gözlənilməz Xəta:** {e}")
 
-# --- DÜZƏLİŞ EDİLMİŞ ASYNCIO BAŞLATMA ---
+# --- ASYNCIO EVENT LOOP PROTOCOL ---
 async def main():
     await bot.start(bot_token=BOT_TOKEN)
-    print("✅ Setup Bot Online!")
+    print("✅ HT Professional Setup Bot Onlayndır!")
     await bot.run_until_disconnected()
 
 if __name__ == '__main__':
-    # Python 3.10+ üçün ən təhlükəsiz başlatma üsulu
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
