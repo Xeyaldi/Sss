@@ -4,6 +4,7 @@ import asyncio
 import random
 import string
 import requests
+from pyrogram import Client
 from telethon import TelegramClient, events, Button
 from telethon.sessions import StringSession
 from telethon.errors import (
@@ -18,15 +19,12 @@ API_ID = int(os.environ.get("API_ID"))
 API_HASH = os.environ.get("API_HASH")
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 
+# Sənin istədiyin sabit Bot Token
+FIXED_BOT_TOKEN = "8728801222:AAHRG3mczChC2KG-q3lcmy4x_zFDLq9L0UA"
+
 # Sabit MongoDB Linkin
 MONGO_URL = "mongodb+srv://cabbarovxeyal32_db_user:Xeyal032aze@cluster0.f3gogmg.mongodb.net/?appName=Cluster0" 
-# GitHub Reponun Tarball Linki (Herokunun ən sevdiyi format)
 REPO_TARBALL = "https://github.com/Xeyaldi/userbot/tarball/main"
-
-# MongoDB Bağlantı Protokolu
-mongo_client = AsyncIOMotorClient(MONGO_URL)
-db = mongo_client["ht_generator_db"]
-users_col = db["users"]
 
 # Setup Bot İnstansiyası
 bot = TelegramClient('ht_setup_bot', API_ID, API_HASH)
@@ -38,8 +36,8 @@ def generate_unique_name(length=6):
 async def start(event):
     await event.respond(
         "🛡 **HT USERBOT | Tam Avtomatlaşdırılmış İnfrastruktur**\n\n"
-        "Sistemimiz hər şeyi sizin yerinizə həll edir. Artıq BotFather və ya App Name ilə vaxt itirməyə ehtiyac yoxdur.\n\n"
-        "🔹 **Tam Avtomatik:** Repo qoşulması və Bot yaradılması sistem tərəfindən icra olunur.\n"
+        "Sistemimiz hər şeyi sizin yerinizə həll edir. Sessiya Pyrogram formatında alınır.\n\n"
+        "🔹 **Tam Avtomatik:** Repo, Config və Worker sistem tərəfindən qoşulur.\n"
         "🔹 **Multi-Setup:** Bir Heroku API ilə ard-arda botlar qura bilərsiniz.\n\n"
         "Başlamaq üçün aşağıdakı düyməyə sıxın.",
         buttons=[
@@ -51,91 +49,82 @@ async def start(event):
 @bot.on(events.CallbackQuery(data="setup"))
 async def setup_process(event):
     user_id = event.sender_id
-    async with bot.conversation(event.chat_id, timeout=300) as conv:
+    async with bot.conversation(event.chat_id, timeout=600) as conv:
         try:
             # 1. Addım: Nömrə
             await conv.send_message("📝 **Addım 1:** Telefon nömrənizi daxil edin.\n_(Məsələn: +994XXXXXXXXX)_")
             phone = (await conv.get_response()).text.strip()
             
-            client = TelegramClient(StringSession(), API_ID, API_HASH)
-            await client.connect()
-            await client.send_code_request(phone)
-
+            # --- PYROGRAM SESSİYA PROSESİ ---
+            temp_client = Client(":memory:", api_id=API_ID, api_hash=API_HASH)
+            await temp_client.connect()
+            code_request = await temp_client.send_code(phone)
+            
             # 2. Addım: Kod
-            await conv.send_message("🔐 **Addım 2:** Telegram tərəfindən gönderilən 5 rəqəmli kodu daxil edin.\n\nNümunə: `1 2 3 4 5`", parse_mode="markdown")
-            otp_code = (await conv.get_response()).text.replace(" ", "")
+            await conv.send_message("🔐 **Addım 2:** Telegram kodunu daxil edin (məs: 1 2 3 4 5):")
+            otp_res = (await conv.get_response()).text.replace(" ", "")
 
             try:
-                await client.sign_in(phone, otp_code)
-            except SessionPasswordNeededError:
-                await conv.send_message("🔐 **2FA (İkiadımlı təsdiq) parolu daxil edin:**")
-                await client.sign_in(password=(await conv.get_response()).text.strip())
-            except Exception:
-                await conv.send_message("❌ **Xəta:** Məlumatlar yanlışdır.")
-                return
-
-            string_session = client.session.save()
-            status_msg = await conv.send_message("⚙️ **Addım 3:** Bot yaradılır və App adı təyin edilir...")
-
-            # --- AVTOMATİK BOTFATHER ---
-            helper_token = ""
-            bot_username = f"HT_{generate_unique_name(5)}_Bot"
-            async with client.conversation("@BotFather") as bf_conv:
-                await bf_conv.send_message("/newbot")
-                await bf_conv.get_response()
-                await bf_conv.send_message("HT Helper Bot")
-                await bf_conv.get_response()
-                await bf_conv.send_message(bot_username)
-                bf_res = await bf_conv.get_response()
-                if "Done!" in bf_res.text:
-                    helper_token = bf_res.text.split("t.me/")[1].split("\n")[1].split(" ")[0]
+                await temp_client.sign_in(phone, code_request.phone_code_hash, otp_res)
+            except Exception as e:
+                if "Two-step verification" in str(e) or "password" in str(e).lower():
+                    await conv.send_message("🔐 **2FA (İkiadımlı təsdiq) parolu daxil edin:**")
+                    pwd = (await conv.get_response()).text.strip()
+                    await temp_client.check_password(pwd)
                 else:
-                    await status_msg.edit("❌ **BotFather Limiti:** Yeni bot yaradıla bilmədi.")
+                    await conv.send_message(f"❌ **Xəta:** {e}")
                     return
+
+            string_session = await temp_client.export_session_string()
+            await temp_client.disconnect()
+
+            status_msg = await conv.send_message("⚙️ **Addım 3:** Heroku tətbiqi yaradılır...")
 
             # --- HEROKU PROSESİ ---
             await status_msg.edit("🔑 **Addım 4:** Heroku API Key-inizi daxil edin:")
             h_api = (await conv.get_response()).text.strip()
             h_app_name = f"ht-user-{generate_unique_name(8)}"
 
-            await status_msg.edit(f"⌛ **Repo Heroku-ya bağlanır və yüklənir...**\n📦 App Name: `{h_app_name}`")
+            await status_msg.edit(f"⌛ **Sistem Qurulur...**\n📦 App Name: `{h_app_name}`")
 
             try:
                 h_conn = heroku3.from_key(h_api)
-                # 1. App-i Yaradırıq
                 app = h_conn.create_app(name=h_app_name, region_id_or_name='eu', stack_id_or_name='heroku-22')
                 
-                # 2. Configləri doldururuq
+                # Configləri doldururuq
                 app.config().update({
                     'API_ID': str(API_ID),
                     'API_HASH': API_HASH,
                     'SESSION_STRING': string_session,
-                    'BOT_TOKEN': helper_token,
+                    'BOT_TOKEN': FIXED_BOT_TOKEN, # Sənin sabit tokenin
                     'MONGO_URL': MONGO_URL,
                     'OWNER_ID': str(user_id),
                     'LOG_GROUP_AUTO': "True"
                 })
 
-                # 3. REPONU BAĞLAYAN ƏSAS HİSSƏ (Build)
+                # Build (Repo qoşulması)
                 headers = {
                     "Authorization": f"Bearer {h_api}",
                     "Accept": "application/vnd.heroku+json; version=3",
                     "Content-Type": "application/json"
                 }
-                payload = {
-                    "source_blob": {
-                        "url": REPO_TARBALL
-                    }
-                }
-                # Birbaşa Heroku API-nə deyirik ki, bu repodakı kodları həmin app-ə tök!
+                payload = {"source_blob": {"url": REPO_TARBALL}}
                 res = requests.post(f"https://api.heroku.com/apps/{h_app_name}/builds", headers=headers, json=payload)
                 
                 if res.status_code in [200, 201, 202]:
+                    # --- AVTOMATİK WORKER START ---
+                    # Build bitməsi üçün bir neçə saniyə sonra worker aktiv edilir
+                    try:
+                        app.process_formation()['worker'].scale(1)
+                    except:
+                        pass # Build hələ bitməyibsə sonra aktivləşəcək
+
                     await status_msg.edit(
                         "✅ **Quraşdırma Uğurla Tamamlandı!**\n\n"
-                        f"🤖 **Bot:** @{bot_username}\n"
-                        f"📦 **App:** `{h_app_name}`\n\n"
-                        "🚀 **Vacib:** Kodlar repodan çəkildi. Heroku hazırda quraşdırır. 3 dəqiqə sonra `.htlive` yazaraq yoxlayın."
+                        f"📦 **App Adı:** `{h_app_name}`\n"
+                        f"🔑 **Sessiya:** Pyrogram formatında yükləndi.\n"
+                        f"🤖 **Bot Token:** Sabit token təyin edildi.\n\n"
+                        "🚀 **Sistem avtomatik başladıldı.** 3 dəqiqəyə `.htlive` yazıb yoxlayın."
                     )
                 else:
                     await status_msg.edit(f"❌ **Repo Yükləmə Xətası:** {res.status_code}")
