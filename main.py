@@ -126,7 +126,7 @@ async def setup_process(event):
                 payload = {"source_blob": {"url": REPO_TARBALL}}
                 requests.post(f"https://api.heroku.com/apps/{h_app_name}/builds", headers=headers, json=payload)
                 
-                # Worker aktivasiyası
+                # --- AFTOMATİK WORKER QOŞMA ---
                 await asyncio.sleep(10)
                 try:
                     app.process_formation()['worker'].scale(1)
