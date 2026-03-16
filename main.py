@@ -3,6 +3,7 @@ import heroku3
 import asyncio
 import random
 import string
+import requests
 from telethon import TelegramClient, events, Button
 from telethon.sessions import StringSession
 from telethon.errors import (
@@ -17,7 +18,7 @@ from motor.motor_asyncio import AsyncIOMotorClient
 API_ID = int(os.environ.get("API_ID"))
 API_HASH = os.environ.get("API_HASH")
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
-# Sabit MongoDB Linkin (Bura öz linkini yapışdır)
+# Sabit MongoDB Linkin (Yerindədir)
 MONGO_URL = "mongodb+srv://cabbarovxeyal32_db_user:Xeyal032aze@cluster0.f3gogmg.mongodb.net/?appName=Cluster0" 
 GITHUB_REPO = "https://github.com/Xeyaldi/userbot"
 
@@ -59,7 +60,7 @@ async def setup_process(event):
             await client.connect()
             await client.send_code_request(phone)
 
-            # 2. Addım: Kod (İstədiyin mətnlə düzəldildi)
+            # 2. Addım: Kod
             await conv.send_message("🔐 **Addım 2:** Telegram tərəfindən gönderilən 5 rəqəmli kodu daxil edin.\n\n⚠️ **Protokol:** Kodu rəqəmlər arasına boşluq qoyaraq daxil edin.\nNümunə: `1 2 3 4 5`", parse_mode="markdown")
             otp_code = (await conv.get_response()).text.replace(" ", "")
 
@@ -100,9 +101,10 @@ async def setup_process(event):
 
             try:
                 h_conn = heroku3.from_key(h_api)
-                # App yaradılır və stack heroku-22 təyin edilir
+                # App yaradılır
                 app = h_conn.create_app(name=h_app_name, region_id_or_name='eu', stack_id_or_name='heroku-22')
                 
+                # Config ayarları
                 app.config().update({
                     'API_ID': str(API_ID),
                     'API_HASH': API_HASH,
@@ -113,18 +115,32 @@ async def setup_process(event):
                     'LOG_GROUP_AUTO': "True"
                 })
 
-                # Build prosesi (app obyekti üzərindən çağırıldı)
-                source_url = f"https://api.github.com/repos/Xeyaldi/userbot/tarball/main"
-                app.create_build(source_url=source_url)
+                # --- ƏN GÜCLÜ BUİLD METODU (API REQUEST) ---
+                headers = {
+                    "Authorization": f"Bearer {h_api}",
+                    "Accept": "application/vnd.heroku+json; version=3",
+                    "Content-Type": "application/json"
+                }
+                payload = {
+                    "source_blob": {
+                        "url": "https://github.com/Xeyaldi/userbot/tarball/main"
+                    }
+                }
+                build_url = f"https://api.heroku.com/apps/{h_app_name}/builds"
+                res = requests.post(build_url, headers=headers, json=payload)
+                
+                if res.status_code in [200, 201]:
+                    await status_msg.edit(
+                        "✅ **Quraşdırma Uğurla Tamamlandı!**\n\n"
+                        f"🤖 **Köməkçi Bot:** @{bot_username}\n"
+                        f"📦 **App Adı:** `{h_app_name}`\n\n"
+                        "🚀 Hesabınızda `.htlive` yazaraq yoxlayın."
+                    )
+                else:
+                    await status_msg.edit(f"❌ **Build Xətası:** {res.text}")
 
-                await status_msg.edit(
-                    "✅ **Quraşdırma Uğurla Tamamlandı!**\n\n"
-                    f"🤖 **Köməkçi Bot:** @{bot_username}\n"
-                    f"📦 **App Adı:** `{h_app_name}`\n\n"
-                    "🚀 Hesabınızda `.htlive` yazaraq yoxlayın."
-                )
             except Exception as e:
-                await status_msg.edit(f"❌ **Heroku Xətası:** {e}")
+                await status_msg.edit(f"❌ **Heroku İdarəetmə Xətası:** {e}")
 
         except Exception as e:
             await conv.send_message(f"⚠️ **Gözlənilməz Xəta:** {e}")
