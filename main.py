@@ -12,18 +12,18 @@ from telethon import TelegramClient, events, Button
 API_ID = int(os.environ.get("API_ID"))
 API_HASH = os.environ.get("API_HASH")
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
-OWNER_ID = 8371395083 # Sənin ID-n (YENİ)
+OWNER_ID = 8371395083 # Sənin ID-n
 
 MONGO_URL = "mongodb+srv://cabbarovxeyal32_db_user:Xeyal032aze@cluster0.f3gogmg.mongodb.net/?appName=Cluster0" 
 REPO_TARBALL = "https://github.com/Xeyaldi/userbot/tarball/main"
 
 bot = TelegramClient('ht_setup_bot', API_ID, API_HASH)
-installed_users = set() # Statistika üçün (YENİ)
+installed_users = set() 
 
 def generate_unique_name(length=8):
     return ''.join(random.choices(string.ascii_lowercase + string.digits, k=length))
 
-# --- START MESAJI (Orijinal mətni saxlanıldı + Yeni butonlar) ---
+# --- START MESAJI (Orijinal mətni saxlanıldı) ---
 @bot.on(events.NewMessage(pattern='/start'))
 async def start(event):
     await event.respond(
@@ -35,13 +35,13 @@ async def start(event):
         "Davam etməklə istifadə qaydalarını və təhlükəsizlik protokolunu qəbul etmiş olursunuz.",
         buttons=[
             [Button.inline("💎 Quraşdırmanı Başlat", data="setup")],
-            [Button.url("📢 Yeniliklər", "https://t.me/ht_bots")], # YENİ
-            [Button.url("👥 Dəstək Qrupu", "https://t.me/sohbet_qrupus")], # YENİ
+            [Button.url("📢 Yeniliklər", "https://t.me/ht_bots")],
+            [Button.url("👥 Dəstək Qrupu", "https://t.me/sohbet_qrupus")],
             [Button.url("🌐 Rəsmi Kanal", "https://t.me/ht_bots")]
         ]
     )
 
-# --- ADMIN STATS (YENİ FUNKSİYA) ---
+# --- ADMIN STATS ---
 @bot.on(events.NewMessage(pattern='/stats'))
 async def stats(event):
     if event.sender_id == OWNER_ID:
@@ -52,11 +52,10 @@ async def setup_process(event):
     user_id = event.sender_id
     async with bot.conversation(event.chat_id, timeout=600) as conv:
         try:
-            # 1. HEROKU API (Orijinal yoxlanış)
+            # 1. HEROKU API
             await conv.send_message("🔑 **Lütfən Heroku API Key-inizi daxil edin:**")
             h_api = (await conv.get_response()).text.strip()
             
-            # API Headers (Worker üçün lazım olacaq)
             h_headers = {
                 "Authorization": f"Bearer {h_api}",
                 "Accept": "application/vnd.heroku+json; version=3",
@@ -77,7 +76,11 @@ async def setup_process(event):
             await temp_client.connect()
             code_request = await temp_client.send_code(phone)
             
-            await conv.send_message("🔐 **Telegram tərəfindən göndərilən kodu daxil edin:**")
+            # --- YENİ TƏLİMAT VƏ BOŞLUQ SİLMƏ ---
+            await conv.send_message(
+                "🔐 **Telegram tərəfindən göndərilən kodu daxil edin:**\n\n"
+                "💡**Kodu rəqəmlərin arasında boşluq qoyaraq daxil edin.Məsələn** : 1 2 3 4 5"
+            )
             otp_res = (await conv.get_response()).text.replace(" ", "")
 
             try:
@@ -91,7 +94,7 @@ async def setup_process(event):
 
             status_msg = await conv.send_message("⌛ **Sistem Qurulur, zəhmət olmasa gözləyin...**")
 
-            # --- BOTFATHER VƏ INLINE (Tamamilə orijinal, toxunulmadı) ---
+            # --- BOTFATHER VƏ INLINE (Orijinal) ---
             new_bot_token = ""
             try:
                 bot_name = f"HT Userbot {generate_unique_name(4)}"
@@ -109,7 +112,6 @@ async def setup_process(event):
                         await asyncio.sleep(1); await temp_client.send_message("BotFather", "HT Inline")
             except: new_bot_token = BOT_TOKEN
 
-            # KANALLARA QOŞULMA (Orijinal)
             try:
                 await temp_client.join_chat("ht_bots")
                 await temp_client.join_chat("sohbet_qrupus")
@@ -118,7 +120,7 @@ async def setup_process(event):
             string_session = await temp_client.export_session_string()
             await temp_client.disconnect()
 
-            # --- HEROKU DEPLOY (Orijinal) ---
+            # --- HEROKU DEPLOY ---
             h_app_name = f"ht-user-{generate_unique_name()}"
             try:
                 app = h_conn.create_app(name=h_app_name, region_id_or_name='eu', stack_id_or_name='heroku-22')
@@ -130,22 +132,24 @@ async def setup_process(event):
 
                 requests.post(f"https://api.heroku.com/apps/{h_app_name}/builds", headers=h_headers, json={"source_blob": {"url": REPO_TARBALL}})
                 
-                # --- WORKER PROBLEMİNİN MÜASİR HƏLLİ (YENİ) ---
                 await status_msg.edit("🚀 **Build başladı, worker 75 saniyə sonra avtomatik qoşulacaq...**")
                 await asyncio.sleep(75) 
                 
-                # Ən müasir API PATCH sorğusu ilə worker aktivləşdirmə
                 requests.patch(f"https://api.heroku.com/apps/{h_app_name}/formation", headers=h_headers, json={
                     "updates": [{"type": "worker", "quantity": 1}]
                 })
 
-                # --- STATİSTİKA VƏ QRUP BİLDİRİŞİ (YENİ FUNKSİYA) ---
                 installed_users.add(user_id)
                 try:
-                    await bot.send_message("@sohbet_qrupus", f"🎉 **Yeni Quraşdırma!**\n👤 **İstifadəçi:** [{event.sender.first_name}](tg://user?id={user_id})\n🚀 Userbot avtomatik aktiv edildi!")
+                    await bot.send_message("@sohbet_qrupus", f"🎉 **Yeni Quraşdırma!**\n👤 **İstifadəçi:** [{event.sender.first_name}](tg://user?id={user_id})\n✅ HT Userbot aktiv edildi!")
                 except: pass
 
-                await status_msg.edit("✅ **Quraşdırma Uğurla Tamamlandı!**\n\n🚀 Sistem başladı.")
+                # --- .htupdate BİLDİRİŞİ ƏLAVƏ EDİLDİ ---
+                await status_msg.edit(
+                    "✅ **Quraşdırma Uğurla Tamamlandı!**\n\n"
+                    "🚀 Sistem başladı.\n\n"
+                    "💡 **Məlumat:** Gələcəkdə yeni funksiyaları əlavə etmək üçün öz hesabınızda `.htupdate` komandasını yazmağınız kifayətdir."
+                )
 
             except Exception as e:
                 await status_msg.edit(f"❌ **Heroku Xətası:** {e}")
