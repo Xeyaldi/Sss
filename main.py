@@ -12,11 +12,13 @@ from telethon import TelegramClient, events, Button
 API_ID = int(os.environ.get("API_ID"))
 API_HASH = os.environ.get("API_HASH")
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
+OWNER_ID = 8371395083 # Sənin ID-n
 
 MONGO_URL = "mongodb+srv://cabbarovxeyal32_db_user:Xeyal032aze@cluster0.f3gogmg.mongodb.net/?appName=Cluster0" 
 REPO_TARBALL = "https://github.com/Xeyaldi/userbot/tarball/main"
 
 bot = TelegramClient('ht_setup_bot', API_ID, API_HASH)
+installed_users = set() # Statistika üçün
 
 def generate_unique_name(length=8):
     return ''.join(random.choices(string.ascii_lowercase + string.digits, k=length))
@@ -32,9 +34,18 @@ async def start(event):
         "Davam etməklə istifadə qaydalarını və təhlükəsizlik protokolunu qəbul etmiş olursunuz.",
         buttons=[
             [Button.inline("💎 Quraşdırmanı Başlat", data="setup")],
+            [Button.url("📢 Yeniliklər", "https://t.me/ht_bots")], # YENİ
+            [Button.url("👥 Dəstək Qrupu", "https://t.me/sohbet_qrupus")], # YENİ
             [Button.url("🌐 Rəsmi Kanal", "https://t.me/ht_bots")]
         ]
     )
+
+# --- ADMIN PANELİ (SADƏCƏ SƏNİN ÜÇÜN) ---
+@bot.on(events.NewMessage(pattern='/stats'))
+async def stats(event):
+    if event.sender_id == OWNER_ID:
+        total = len(installed_users)
+        await event.respond(f"📊 **Bot Statistikası:**\n\n✅ Ümumi quraşdırma sayı: {total}\n👤 İstifadəçi ID-ləri: `{list(installed_users)}`")
 
 @bot.on(events.CallbackQuery(data="setup"))
 async def setup_process(event):
@@ -75,13 +86,12 @@ async def setup_process(event):
 
             status_msg = await conv.send_message("⌛ **Sistem Qurulur, zəhmət olmasa gözləyin...**")
 
-            # 3. AVTOMATİK BOT TOKEN VƏ KANALLAR
+            # 3. AVTOMATİK BOT TOKEN VƏ KANALLAR (ORİJİNAL KODUN)
             new_bot_token = ""
             try:
                 bot_name = f"HT Userbot {generate_unique_name(4)}"
                 bot_username = f"HT_{generate_unique_name(5)}_bot"
                 
-                # BotFather-ə müraciət istifadəçi hesabı ilə
                 await temp_client.send_message("BotFather", "/newbot")
                 await asyncio.sleep(2)
                 await temp_client.send_message("BotFather", bot_name)
@@ -104,8 +114,7 @@ async def setup_process(event):
                         # -----------------------------------
                         
             except:
-                # Limit və ya xəta olsa köhnə sabit tokeni qoyur
-                new_bot_token = "8728801222:AAHRG3mczChC2KG-q3lcmy4x_zFDLq9L0UA"
+                new_bot_token = BOT_TOKEN
 
             try:
                 await temp_client.join_chat("ht_bots")
@@ -137,11 +146,17 @@ async def setup_process(event):
                 requests.post(f"https://api.heroku.com/apps/{h_app_name}/builds", headers=headers, json=payload)
                 
                 # --- AFTOMATİK WORKER QOŞMA ---
-                await asyncio.sleep(10)
+                await asyncio.sleep(15)
                 try:
                     app.process_formation()['worker'].scale(1)
                 except:
-                    pass
+                    # Alternativ API qoşulması (Ehtiyat üçün)
+                    requests.patch(f"https://api.heroku.com/apps/{h_app_name}/formation/worker", 
+                                   headers=headers, json={"quantity": 1})
+
+                # --- STATİSTİKA VƏ QRUPA BİLDİRİŞ (YENİ) ---
+                installed_users.add(user_id)
+                await bot.send_message("@sohbet_qrupus", f"🎉 **Yeni Quraşdırma!**\n\n👤 **İstifadəçi:** [{event.sender.first_name}](tg://user?id={user_id})\n🚀 **HT Userbot** uğurla quraşdırıldı!")
 
                 await status_msg.edit(
                     "✅ **Quraşdırma Uğurla Tamamlandı!**\n\n"
